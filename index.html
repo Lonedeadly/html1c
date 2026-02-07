@@ -26,12 +26,28 @@ body {
   background: #ffffff;
   user-select: none;
   box-sizing: border-box;
+  position: relative;
 }
 .block.selected {
   outline: 2px solid #0d6efd;
 }
 .edit-mode .block {
   cursor: move;
+}
+.edit-mode .block.resizing {
+  cursor: default;
+}
+.edit-mode .block::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid #0d6efd;
+  border-bottom: 2px solid #0d6efd;
+  opacity: 0.6;
+  pointer-events: none;
 }
 .block input,
 .block textarea,
@@ -146,19 +162,34 @@ var propHeight = document.getElementById('prop-height');
 
 var isEdit = false;
 var selected = null;
+var isResizing = false;
+var resizeStart = null;
+var resizeBlock = null;
+var dragBlock = null;
+var MIN_WIDTH = 120;
+var MIN_HEIGHT = 60;
 
 editCheckbox.onclick = function() {
   isEdit = editCheckbox.checked;
   document.body.className = isEdit ? 'edit-mode' : '';
+  var blocks = container.getElementsByClassName('block');
+  for (var j = 0; j < blocks.length; j++) {
+    blocks[j].draggable = isEdit;
+  }
   var els = container.querySelectorAll('input,textarea,button,select');
   for (var i = 0; i < els.length; i++) {
     els[i].disabled = isEdit;
     els[i].readOnly = isEdit;
   }
-  if (!isEdit) clearSelection();
+  if (!isEdit) {
+    isResizing = false;
+    resizeBlock = null;
+    resizeStart = null;
+    clearSelection();
+  }
 };
 
-container.onclick = function(e) {
+container.addEventListener('mousedown', function(e) {
   if (!isEdit) return;
   var t = e.target.nodeType === 3 ? e.target.parentNode : e.target;
   if (t.closest('input,textarea,button,select')) return;
@@ -166,9 +197,23 @@ container.onclick = function(e) {
   var block = t.closest('.block');
   if (!block) return;
 
+  if (startResizeIfNeeded(e, block)) {
+    e.stopPropagation();
+    return;
+  }
+
   selectBlock(block);
-  e.stopPropagation();
-};
+});
+
+container.addEventListener('mousemove', function(e) {
+  if (!isEdit || isResizing) return;
+  var t = e.target.nodeType === 3 ? e.target.parentNode : e.target;
+  var block = t.closest('.block');
+  if (!block) return;
+  var dir = getResizeDirections(e, block);
+  var cursor = getResizeCursor(dir);
+  block.style.cursor = cursor || 'move';
+});
 
 document.onclick = function(e) {
   if (!isEdit) return;
@@ -187,8 +232,9 @@ function selectBlock(block) {
   var strong = block.getElementsByTagName('strong')[0];
   propTitle.value = strong ? strong.innerText : '';
   propId.value = block.getAttribute('data-id') || '';
-  propWidth.value = block.style.width || '';
-  propHeight.value = block.style.height || '';
+  var computed = window.getComputedStyle(block);
+  propWidth.value = normalizeSize(computed.width);
+  propHeight.value = normalizeSize(computed.height);
 }
 
 function clearSelection() {
@@ -206,11 +252,148 @@ propTitle.onkeyup = function() {
   }
 };
 propWidth.onkeyup = function() {
-  if (selected) selected.style.width = propWidth.value;
+  if (selected) selected.style.width = formatSizeValue(propWidth.value);
 };
 propHeight.onkeyup = function() {
-  if (selected) selected.style.height = propHeight.value;
+  if (selected) selected.style.height = formatSizeValue(propHeight.value);
 };
+
+function normalizeSize(value) {
+  return value === 'auto' ? '' : value;
+}
+
+function formatSizeValue(value) {
+  var trimmed = value.trim();
+  if (trimmed === '') return '';
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return trimmed + 'px';
+  return trimmed;
+}
+
+function startResizeIfNeeded(e, block) {
+  if (!isEdit) return false;
+  var rect = block.getBoundingClientRect();
+  var dir = getResizeDirections(e, block);
+  if (!dir.left && !dir.right && !dir.top && !dir.bottom) return false;
+  isResizing = true;
+  resizeBlock = block;
+  var startLeft = parseFloat(block.style.left) || 0;
+  var startTop = parseFloat(block.style.top) || 0;
+  resizeStart = {
+    x: e.clientX,
+    y: e.clientY,
+    width: rect.width,
+    height: rect.height,
+    left: startLeft,
+    top: startTop,
+    dir: dir
+  };
+  block.className += ' resizing';
+  block.style.cursor = getResizeCursor(dir);
+  selectBlock(block);
+  e.preventDefault();
+  return true;
+}
+
+document.addEventListener('mousemove', function(e) {
+  if (!isResizing || !resizeBlock || !resizeStart) return;
+  var deltaX = e.clientX - resizeStart.x;
+  var deltaY = e.clientY - resizeStart.y;
+  var nextWidth = resizeStart.width;
+  var nextHeight = resizeStart.height;
+  var nextLeft = resizeStart.left;
+  var nextTop = resizeStart.top;
+
+  if (resizeStart.dir.left) {
+    nextWidth = Math.max(MIN_WIDTH, resizeStart.width - deltaX);
+    nextLeft = resizeStart.left + (resizeStart.width - nextWidth);
+  }
+  if (resizeStart.dir.right) {
+    nextWidth = Math.max(MIN_WIDTH, resizeStart.width + deltaX);
+  }
+  if (resizeStart.dir.top) {
+    nextHeight = Math.max(MIN_HEIGHT, resizeStart.height - deltaY);
+    nextTop = resizeStart.top + (resizeStart.height - nextHeight);
+  }
+  if (resizeStart.dir.bottom) {
+    nextHeight = Math.max(MIN_HEIGHT, resizeStart.height + deltaY);
+  }
+  resizeBlock.style.width = nextWidth + 'px';
+  resizeBlock.style.height = nextHeight + 'px';
+  if (resizeStart.dir.left) {
+    resizeBlock.style.left = nextLeft + 'px';
+  }
+  if (resizeStart.dir.top) {
+    resizeBlock.style.top = nextTop + 'px';
+  }
+  propWidth.value = nextWidth + 'px';
+  propHeight.value = nextHeight + 'px';
+});
+
+document.addEventListener('mouseup', function() {
+  if (!isResizing) return;
+  isResizing = false;
+  if (resizeBlock) {
+    resizeBlock.className = resizeBlock.className.replace(' resizing', '');
+    resizeBlock.style.cursor = '';
+  }
+  resizeBlock = null;
+  resizeStart = null;
+});
+
+container.addEventListener('dragstart', function(e) {
+  if (!isEdit || isResizing) {
+    e.preventDefault();
+    return;
+  }
+  var t = e.target.nodeType === 3 ? e.target.parentNode : e.target;
+  var block = t.closest('.block');
+  if (!block) return;
+  dragBlock = block;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', block.getAttribute('data-id') || '');
+});
+
+container.addEventListener('dragover', function(e) {
+  if (!isEdit || !dragBlock) return;
+  e.preventDefault();
+  var t = e.target.nodeType === 3 ? e.target.parentNode : e.target;
+  var block = t.closest('.block');
+  if (!block || block === dragBlock) return;
+  var rect = block.getBoundingClientRect();
+  var after = e.clientY - rect.top > rect.height / 2;
+  container.insertBefore(dragBlock, after ? block.nextSibling : block);
+});
+
+container.addEventListener('dragend', function() {
+  dragBlock = null;
+});
+
+function getResizeDirections(e, block) {
+  var rect = block.getBoundingClientRect();
+  var offsetX = e.clientX - rect.left;
+  var offsetY = e.clientY - rect.top;
+  var edge = 8;
+  return {
+    left: offsetX <= edge,
+    right: rect.width - offsetX <= edge,
+    top: offsetY <= edge,
+    bottom: rect.height - offsetY <= edge
+  };
+}
+
+function getResizeCursor(dir) {
+  var horizontal = dir.left || dir.right;
+  var vertical = dir.top || dir.bottom;
+  if (horizontal && vertical) {
+    if ((dir.left && dir.top) || (dir.right && dir.bottom)) {
+      return 'nwse-resize';
+    }
+    return 'nesw-resize';
+  }
+  if (horizontal) return 'ew-resize';
+  if (vertical) return 'ns-resize';
+  return '';
+}
 </script>
 
 </body>

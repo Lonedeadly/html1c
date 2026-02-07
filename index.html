@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Редактируемая форма</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 16px;
+  background: #f8f9fa;
+}
+.header { margin-bottom: 16px; }
+.container {
+  position: relative;
+  padding: 16px;
+  border: 2px dashed #adb5bd;
+  background: #ffffff;
+}
+.block {
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  background: #ffffff;
+  user-select: none;
+  box-sizing: border-box;
+}
+.block.selected {
+  outline: 2px solid #0d6efd;
+}
+.edit-mode .block {
+  cursor: move;
+}
+.block input,
+.block textarea,
+.block select,
+.block button {
+  width: 100%;
+  box-sizing: border-box;
+}
+.block textarea { resize: vertical; }
+
+#properties-panel {
+position: fixed;
+top: 0;
+right: 0;
+width: 280px;
+height: 100%;
+background: #ffffff;
+border-left: 1px solid #ced4da;
+padding: 16px;
+display: none;
+box-sizing: border-box;
+}
+.prop-row { margin-bottom: 12px; }
+.prop-row label {
+display: block;
+font-size: 12px;
+margin-bottom: 4px;
+} </style>
+
+</head>
+<body>
+
+<div class="header">
+  <label>
+    <input type="checkbox" id="editMode"> Режим редактирования
+  </label>
+</div>
+
+<div class="container" id="container">
+  <div class="block" data-id="num">
+    <strong>Номер документа</strong>
+    <input type="text">
+  </div>
+  <div class="block" data-id="date">
+    <strong>Дата</strong>
+    <input type="text">
+  </div>
+  <div class="block" data-id="sum">
+    <strong>Сумма</strong>
+    <input type="text">
+  </div>
+  <div class="block" data-id="action">
+    <strong>Действие</strong>
+    <button type="button">Кнопка</button>
+  </div>
+  <div class="block" data-id="comment">
+    <strong>Комментарий</strong>
+    <textarea rows="3"></textarea>
+  </div>
+</div>
+
+<div id="properties-panel">
+  <div class="prop-row">
+    <label>Заголовок</label>
+    <input type="text" id="prop-title">
+  </div>
+  <div class="prop-row">
+    <label>ID</label>
+    <input type="text" id="prop-id" readonly>
+  </div>
+  <div class="prop-row">
+    <label>Ширина</label>
+    <input type="text" id="prop-width">
+  </div>
+  <div class="prop-row">
+    <label>Высота</label>
+    <input type="text" id="prop-height">
+  </div>
+</div>
+
+<script>
+if (!Element.prototype.matches) {
+  Element.prototype.matches =
+    Element.prototype.msMatchesSelector ||
+    Element.prototype.webkitMatchesSelector ||
+    function(s) {
+      var m = (this.document || this.ownerDocument).querySelectorAll(s);
+      var i = m.length;
+      while (--i >= 0 && m.item(i) !== this) {}
+      return i > -1;
+    };
+}
+if (!Element.prototype.closest) {
+  Element.prototype.closest = function(s) {
+    var el = this;
+    while (el && el.nodeType === 1) {
+      if (el.matches(s)) return el;
+      el = el.parentNode;
+    }
+    return null;
+  };
+}
+
+var editCheckbox = document.getElementById('editMode');
+var container = document.getElementById('container');
+var panel = document.getElementById('properties-panel');
+
+var propTitle = document.getElementById('prop-title');
+var propId = document.getElementById('prop-id');
+var propWidth = document.getElementById('prop-width');
+var propHeight = document.getElementById('prop-height');
+
+var isEdit = false;
+var selected = null;
+
+editCheckbox.onclick = function() {
+  isEdit = editCheckbox.checked;
+  document.body.className = isEdit ? 'edit-mode' : '';
+  var els = container.querySelectorAll('input,textarea,button,select');
+  for (var i = 0; i < els.length; i++) {
+    els[i].disabled = isEdit;
+    els[i].readOnly = isEdit;
+  }
+  if (!isEdit) clearSelection();
+};
+
+container.onclick = function(e) {
+  if (!isEdit) return;
+  var t = e.target.nodeType === 3 ? e.target.parentNode : e.target;
+  if (t.closest('input,textarea,button,select')) return;
+
+  var block = t.closest('.block');
+  if (!block) return;
+
+  selectBlock(block);
+  e.stopPropagation();
+};
+
+document.onclick = function(e) {
+  if (!isEdit) return;
+  var t = e.target.nodeType === 3 ? e.target.parentNode : e.target;
+  if (!t.closest('.block') && !t.closest('#properties-panel')) {
+    clearSelection();
+  }
+};
+
+function selectBlock(block) {
+  clearSelection();
+  selected = block;
+  block.className += ' selected';
+  panel.style.display = 'block';
+
+  var strong = block.getElementsByTagName('strong')[0];
+  propTitle.value = strong ? strong.innerText : '';
+  propId.value = block.getAttribute('data-id') || '';
+  propWidth.value = block.style.width || '';
+  propHeight.value = block.style.height || '';
+}
+
+function clearSelection() {
+  if (selected) {
+    selected.className = selected.className.replace(' selected', '');
+  }
+  selected = null;
+  panel.style.display = 'none';
+}
+
+propTitle.onkeyup = function() {
+  if (selected) {
+    var s = selected.getElementsByTagName('strong')[0];
+    if (s) s.innerText = propTitle.value;
+  }
+};
+propWidth.onkeyup = function() {
+  if (selected) selected.style.width = propWidth.value;
+};
+propHeight.onkeyup = function() {
+  if (selected) selected.style.height = propHeight.value;
+};
+</script>
+
+</body>
+</html>

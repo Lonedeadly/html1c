@@ -26,12 +26,28 @@ body {
   background: #ffffff;
   user-select: none;
   box-sizing: border-box;
+  position: relative;
 }
 .block.selected {
   outline: 2px solid #0d6efd;
 }
 .edit-mode .block {
   cursor: move;
+}
+.edit-mode .block.resizing {
+  cursor: nwse-resize;
+}
+.edit-mode .block::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid #0d6efd;
+  border-bottom: 2px solid #0d6efd;
+  opacity: 0.6;
+  pointer-events: none;
 }
 .block input,
 .block textarea,
@@ -146,6 +162,9 @@ var propHeight = document.getElementById('prop-height');
 
 var isEdit = false;
 var selected = null;
+var isResizing = false;
+var resizeStart = null;
+var resizeBlock = null;
 
 editCheckbox.onclick = function() {
   isEdit = editCheckbox.checked;
@@ -166,8 +185,10 @@ container.onclick = function(e) {
   var block = t.closest('.block');
   if (!block) return;
 
-  selectBlock(block);
-  e.stopPropagation();
+  if (!startResizeIfNeeded(e, block)) {
+    selectBlock(block);
+    e.stopPropagation();
+  }
 };
 
 document.onclick = function(e) {
@@ -187,8 +208,9 @@ function selectBlock(block) {
   var strong = block.getElementsByTagName('strong')[0];
   propTitle.value = strong ? strong.innerText : '';
   propId.value = block.getAttribute('data-id') || '';
-  propWidth.value = block.style.width || '';
-  propHeight.value = block.style.height || '';
+  var computed = window.getComputedStyle(block);
+  propWidth.value = normalizeSize(computed.width);
+  propHeight.value = normalizeSize(computed.height);
 }
 
 function clearSelection() {
@@ -206,11 +228,75 @@ propTitle.onkeyup = function() {
   }
 };
 propWidth.onkeyup = function() {
-  if (selected) selected.style.width = propWidth.value;
+  if (selected) selected.style.width = formatSizeValue(propWidth.value);
 };
 propHeight.onkeyup = function() {
-  if (selected) selected.style.height = propHeight.value;
+  if (selected) selected.style.height = formatSizeValue(propHeight.value);
 };
+
+function normalizeSize(value) {
+  return value === 'auto' ? '' : value;
+}
+
+function formatSizeValue(value) {
+  var trimmed = value.trim();
+  if (trimmed === '') return '';
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return trimmed + 'px';
+  return trimmed;
+}
+
+function startResizeIfNeeded(e, block) {
+  if (!isEdit) return false;
+  var rect = block.getBoundingClientRect();
+  var offsetX = e.clientX - rect.left;
+  var offsetY = e.clientY - rect.top;
+  var edge = 8;
+  var nearRight = rect.width - offsetX <= edge;
+  var nearBottom = rect.height - offsetY <= edge;
+  if (!nearRight && !nearBottom) return false;
+  isResizing = true;
+  resizeBlock = block;
+  resizeStart = {
+    x: e.clientX,
+    y: e.clientY,
+    width: rect.width,
+    height: rect.height,
+    dir: {
+      right: nearRight,
+      bottom: nearBottom
+    }
+  };
+  block.className += ' resizing';
+  selectBlock(block);
+  e.preventDefault();
+  return true;
+}
+
+document.addEventListener('mousemove', function(e) {
+  if (!isResizing || !resizeBlock || !resizeStart) return;
+  var nextWidth = resizeStart.width;
+  var nextHeight = resizeStart.height;
+  if (resizeStart.dir.right) {
+    nextWidth = Math.max(120, resizeStart.width + (e.clientX - resizeStart.x));
+  }
+  if (resizeStart.dir.bottom) {
+    nextHeight = Math.max(60, resizeStart.height + (e.clientY - resizeStart.y));
+  }
+  resizeBlock.style.width = nextWidth + 'px';
+  resizeBlock.style.height = nextHeight + 'px';
+  propWidth.value = nextWidth + 'px';
+  propHeight.value = nextHeight + 'px';
+});
+
+document.addEventListener('mouseup', function() {
+  if (!isResizing) return;
+  isResizing = false;
+  if (resizeBlock) {
+    resizeBlock.className = resizeBlock.className.replace(' resizing', '');
+  }
+  resizeBlock = null;
+  resizeStart = null;
+});
 </script>
 
 </body>
